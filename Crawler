@@ -1,0 +1,120 @@
+import requests
+import re
+import pandas as pd
+import time
+import random
+from bs4 import BeautifulSoup
+
+
+
+pd_deals = pd.DataFrame(columns=['url','title','deal_date','deal_price','sale_price',\
+                                 'towards','floor','region'])
+
+temp_deal = pd.DataFrame(columns=['url','title','deal_date','deal_price','sale_price',\
+                                 'towards','floor','region'])
+
+hds=[{'User-Agent':'Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.1.6) Gecko/20091201 Firefox/3.5.6'},\
+    {'User-Agent':'Mozilla/5.0 (Windows NT 6.2) AppleWebKit/535.11 (KHTML, like Gecko) Chrome/17.0.963.12 Safari/535.11'},\
+    {'User-Agent':'Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.2; Trident/6.0)'},\
+    {'User-Agent':'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:34.0) Gecko/20100101 Firefox/34.0'},\
+    {'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/44.0.2403.89 Chrome/44.0.2403.89 Safari/537.36'},\
+    {'User-Agent':'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_8; en-us) AppleWebKit/534.50 (KHTML, like Gecko) Version/5.1 Safari/534.50'},\
+    {'User-Agent':'Mozilla/5.0 (Windows; U; Windows NT 6.1; en-us) AppleWebKit/534.50 (KHTML, like Gecko) Version/5.1 Safari/534.50'},\
+    {'User-Agent':'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0'},\
+    {'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.6; rv:2.0.1) Gecko/20100101 Firefox/4.0.1'},\
+    {'User-Agent':'Mozilla/5.0 (Windows NT 6.1; rv:2.0.1) Gecko/20100101 Firefox/4.0.1'},\
+    {'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_0) AppleWebKit/535.11 (KHTML, like Gecko) Chrome/17.0.963.56 Safari/535.11'},\
+    {'User-Agent':'Opera/9.80 (Macintosh; Intel Mac OS X 10.6.8; U; en) Presto/2.8.131 Version/11.11'},\
+    {'User-Agent':'Opera/9.80 (Windows NT 6.1; U; en) Presto/2.8.131 Version/11.11'}]         
+
+#get all the region's url
+def getRegionLevel1(page_url):
+    req = requests.get(page_url)
+    soup = BeautifulSoup(req.text)
+    reg = soup.select('a')
+    url_list = []
+    for i in range(27,44):
+        query = "INSERT INTO region_url(region_name,region_url) VALUES(%s,%s)"
+        region_url = 'https://bj.lianjia.com' + reg[i]['href']
+        region_name = reg[i].string
+        param = (str(i),region_url)
+        url_list.append(region_url)
+    return url_list
+
+page_url = 'https://bj.lianjia.com/chengjiao/chaoyang/'
+
+#get all the sub region's url
+def getRegionLevel2(page_url):
+    req = requests.get(page_url)
+    soup = BeautifulSoup(req.text)
+    div = str(soup.select('div')[20].encode('utf-8'))
+    reg = re.compile(r"\/chengjiao\/\w*")
+    re_list = re.findall(reg,div)
+    url_list = []
+    for temp in re_list:
+        url_list.append('https://bj.lianjia.com'+temp)
+    return url_list
+
+
+#get region urls
+main_page = 'https://bj.lianjia.com/chengjiao/'
+region_url = getRegionLevel1(main_page)
+region_name = ['东城','西城','朝阳','海淀','丰台','石景山','通州','昌平',\
+               '大兴','亦庄开发区','顺义','房山','门头沟','平谷','怀柔',\
+               '密云','延庆']
+
+dict_region = dict(zip(region_url, region_name))
+
+for key,value in subregion_url.iteritems():
+    print key,value
+
+
+#get sub region urls
+subregion_url = {}
+for key,value in dict_region.iteritems():
+    temp_url = getRegionLevel2(key)
+    temp_dict = dict.fromkeys(temp_url, value)
+    subregion_url = dict(subregion_url.items()+temp_dict.items())
+
+subregion_url_list =  subregion_url.keys()
+
+
+for temp in subregion_url_list[1:235]:
+    print temp
+    for j in range(1,101):
+        print j
+        temp_url = temp+'/pg'+str(j)
+        try:
+            req = requests.get(temp_url,timeout=30,\
+                               headers=random.choice(hds))
+        except requests.exceptions.Timeout:
+            j=j-1
+        soup = BeautifulSoup(req.text)
+        if len(soup.find_all(name='div',attrs='title')) < 10:
+            break
+
+        for i in range(0,30):
+           title = soup.find_all(name='div',attrs='title')[i+1].string
+           if i >= len(soup.find_all(name='div',attrs='houseInfo')):
+               break
+           towards=soup.find_all(name='div',attrs='houseInfo')[i].contents[1]
+           deal_date = soup.find_all(name='div',attrs='dealDate')[i].string
+           if soup.find_all(name='div',attrs='totalPrice')[i].span is None:
+               price='NA'
+           else:
+               price = soup.find_all(name='div',attrs='totalPrice')[i].span.string
+           floor = soup.find_all(name='div',attrs='positionInfo')[i].contents[1]
+           if len(soup.find_all('div',attrs='info')[i].\
+                   find_all('div',attrs='dealCycleeInfo')) == 0:
+                       sale_price='NA'
+           else:
+               sale_price = soup.find_all('div',attrs='info')[i].\
+                                 find_all('div',attrs='dealCycleeInfo')[0].\
+                                 find_all('span',attrs='dealCycleTxt')[0].span.contents[0]
+
+           #print title, sale_price
+           pd_deals.loc[i] = {'url':temp,'title':title,'deal_date':deal_date,'deal_price':price,\
+                'sale_price':sale_price,'towards':towards,'floor':floor,'region':value}
+        pd_deals.to_csv('C:/Users/xgao4/Desktop/Python Projects/Lianjia/test.txt',\
+                    header=False,index = False,encoding='utf-8',mode='a')
+        pd_deals = temp_deal
